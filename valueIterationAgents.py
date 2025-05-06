@@ -110,7 +110,26 @@ class AsynchronousValueIterationAgent(ValueIterationAgent):
         ValueIterationAgent.__init__(self, mdp, discount, iterations)
 
     def runValueIteration(self):
-        "*** YOUR CODE HERE ***"
+        states = self.mdp.getStates()
+        num_states = len(states)
+
+        for i in range(self.iterations):
+            state = states[i % num_states]
+
+            if self.mdp.isTerminal(state):
+                continue
+
+            actions = self.mdp.getPossibleActions(state)
+            max_q_value = float('-inf')
+
+            for action in actions:
+                q_value = 0
+                for next_state, prob in self.mdp.getTransitionStatesAndProbs(state, action):
+                    reward = self.mdp.getReward(state, action, next_state)
+                    q_value += prob * (reward + self.discount * self.values[next_state])
+                max_q_value = max(max_q_value, q_value)
+
+            self.values[state] = max_q_value
 
 class PrioritizedSweepingValueIterationAgent(AsynchronousValueIterationAgent):
     """
@@ -130,5 +149,49 @@ class PrioritizedSweepingValueIterationAgent(AsynchronousValueIterationAgent):
         ValueIterationAgent.__init__(self, mdp, discount, iterations)
 
     def runValueIteration(self):
-        "*** YOUR CODE HERE ***"
+        states = self.mdp.getStates()
+        predecessors = {}
 
+        for state in states:
+            predecessors[state] = set()
+        for state in states:
+            if self.mdp.isTerminal(state):
+                continue
+            for action in self.mdp.getPossibleActions(state):
+                for next_state, prob in self.mdp.getTransitionStatesAndProbs(state, action):
+                    if prob > 0:
+                        predecessors[next_state].add(state)
+
+        pq = util.PriorityQueue()
+        for state in states:
+            if self.mdp.isTerminal(state):
+                continue
+            max_q_value = max(
+                [sum(prob * (self.mdp.getReward(state, action, next_state) + self.discount * self.values[next_state])
+                for next_state, prob in self.mdp.getTransitionStatesAndProbs(state, action))
+                for action in self.mdp.getPossibleActions(state)]
+            )
+            diff = abs(self.values[state] - max_q_value)
+            pq.push(state, -diff)
+
+        for _ in range(self.iterations):
+            if pq.isEmpty():
+                break
+            state = pq.pop()
+            if not self.mdp.isTerminal(state):
+                self.values[state] = max(
+                    [sum(prob * (self.mdp.getReward(state, action, next_state) + self.discount * self.values[next_state])
+                    for next_state, prob in self.mdp.getTransitionStatesAndProbs(state, action))
+                    for action in self.mdp.getPossibleActions(state)]
+                )
+            for p in predecessors[state]:
+                if self.mdp.isTerminal(p):
+                    continue
+                max_q_value = max(
+                    [sum(prob * (self.mdp.getReward(p, action, next_state) + self.discount * self.values[next_state])
+                    for next_state, prob in self.mdp.getTransitionStatesAndProbs(p, action))
+                    for action in self.mdp.getPossibleActions(p)]
+                )
+                diff = abs(self.values[p] - max_q_value)
+                if diff > self.theta:
+                    pq.update(p, -diff)
